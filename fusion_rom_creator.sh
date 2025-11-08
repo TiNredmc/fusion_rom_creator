@@ -3,23 +3,76 @@
 # By TinLethax
 
 UBOOT_FILE=$1
-UBOOT_OFFSET=0
 SPLASH_FILE=$2
-SPLASH_OFFSET=3
 KERNEL_FILE=$3
-KERNEL_OFFSET=123
 FS_FILE=$4
+ENV_FILE="env.img"
+
+# MTD Partition layout
+# 0x00000000-0x00040000 : "U-Boot"
+# 0x00040000-0x00080000 : "cal"
+# 0x00080000-0x000c0000 : "environment"
+# 0x000c0000-0x00100000 : "splash"
+# 0x00100000-0x019c0000 : "fs1"
+# 0x019c0000-0x01ec0000 : "fs2"
+# 0x01ec0000-0x02000000 : "kernel"
+# 0x00000000-0x02000000 : "whole_program_flash"
+
+UBOOT_OFFSET=0
+CAL_OFFSET=1
+ENV_OFFSET=2
+SPLASH_OFFSET=3
 FS1_SIZE=17563648
 FS1_OFFSET=4
 FS2_SIZE=5242880
 FS2_OFFSET=103
+KERNEL_OFFSET=123
+
+FOUND_NVKEYS="no"
 
 echo "Fusion ROM image creator V1.0"
 echo "By TinLethax"
 
 if [ $# != 4 ]
 then
+	echo "Usage : fusion_rom_creator.sh [u_boot.img] [splash.img] [kernel.img] [filesystem.tar.gz]"
 	echo "Arguments are not equal to four! quiting..."
+	exit
+fi
+
+if ! test -e $1
+then
+	echo "U boot image not found!"
+	exit
+fi
+
+if ! test -e $2
+then
+	echo "Splash image not found!"
+	exit
+fi
+
+if ! test -e $3
+then
+	echo "Kernel image not found!"
+	exit
+fi
+
+if ! test -e $4
+then
+	echo "File system tar not found!"
+	exit
+fi
+
+if ! test -e $ENV_FILE
+then
+	echo "Environment file not found! Try git clone it again?"
+	exit
+fi
+
+if ! test -e fusion_rom_splitter
+then
+	echo "Fusion Rom Splitter tool is missing, please compile it and put in the same folder as this script!"
 	exit
 fi
 
@@ -31,6 +84,11 @@ sync
 echo "Writing U-boot ..."
 dd if=$UBOOT_FILE of=fusion_rom.bin conv=notrunc >/dev/null 2>&1
 sync
+sync
+
+echo "Writing Environment ..."
+dd if=$ENV_FILE of=fusion_rom.bin bs=256KiB seek=$ENV_OFFSET conv=notrunc >/dev/null 2>&1
+sync 
 sync
 
 echo "Writing Splash image..."
@@ -48,10 +106,13 @@ if ! test -e rootfs
 then
 	mkdir rootfs
 fi
-sudo tar -xzvf $FS_FILE -C rootfs
+sudo tar -xzf $FS_FILE -C rootfs
 
+# looking for "nvkeys" folder in the same directory with this script
+# you can put your original nvkey dumps if you have it
 if  test -e nvkeys
 then
+	FOUND_NVKEYS="yes"
 	echo "Found nvkeys! copying..."
 	cp nvkeys/usr/local/perm/* rootfs/usr/local/perm/
 fi
@@ -71,7 +132,13 @@ then
 	mkdir -p rootfs2/usr/local
 fi
 
-cp -r nvkeys/usr/local/nv rootfs2/usr/local/
+if test $FOUND_NVKEYS = "yes" 
+then
+	echo "Copying rootfs2 NV..."
+	cp -r nvkeys/usr/local/nv rootfs2/usr/local/
+else
+	echo "No nvkeys, will just create an empty FS2 partition..."
+fi
 
 echo "Creating temporary FS2 partition image ..."
 echo "Erase size : 256KiB Page Size : 256KiB"
@@ -89,10 +156,25 @@ then
 fi
 
 echo "Cleaning up..."
-sudo rm -rf rootfs
-sudo rm -rf rootfs2
-sudo rm -rf fs1.img
-sudo rm -rf fs2.img
+if test -e rootfs
+then
+	sudo rm -rf rootfs
+fi
+
+if test -e rootfs2
+then
+	sudo rm -rf rootfs2
+fi
+
+if test -e fs1.img
+then
+	sudo rm -rf fs1.img
+fi
+
+if test -e fs2.img
+then
+	sudo rm -rf fs2.img
+fi
 
 echo "Done!"
 exit
