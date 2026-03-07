@@ -399,6 +399,13 @@ int i32Fusion_handleGenerate(char *calfilename){
 		return -1;
 	}
 	
+	// Write zero padding to make the cal file exactly 256KiB in size (262144 bytes)
+	fseek(fpCalFile, 0L, SEEK_END);
+	u32CalReadWriteBuf = 0x00000000;
+	for(uint32_t j = ftell(fpCalFile); j < 262144; j++){
+		fwrite(&u32CalReadWriteBuf, sizeof(uint8_t), 1, fpCalFile);
+	}
+	
 	printf("***Cal end of file***\n");
 	fclose(fpCalFile);
 }
